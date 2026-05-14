@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""情报通 2024-2025 数据看板 V10 - 支持本地或123云盘加载"""
-import os, sys, tempfile, requests, json as _json
+"""情报通 2024-2025 数据看板 V10 - 从 GitHub Release 自动下载数据"""
+import os, sys, tempfile, shutil, gzip, requests, json as _json
 
 # ========== GitHub Release 数据加载 ==========
 _DATA_DIR = os.path.join(tempfile.gettempdir(), "qingbaotong_data")
@@ -8,11 +8,10 @@ os.makedirs(_DATA_DIR, exist_ok=True)
 _PKL_2025 = os.path.join(_DATA_DIR, "qingbaotong_2025_full.pkl")
 _PKL_2024 = os.path.join(_DATA_DIR, "qingbaotong_2024_full.pkl")
 
-# GitHub Release 资源 URL（public repo，无需认证）
 _RELEASE_BASE = "https://github.com/Julian0921/qingbaotong-dashboard/releases/download/v1.0"
 _DATA_FILES = {
-    "qingbaotong_2025_full.pkl": _PKL_2025,
-    "qingbaotong_2024_full.pkl": _PKL_2024,
+    "qingbaotong_2025_full.pkl.gz": _PKL_2025,
+    "qingbaotong_2024_full.pkl.gz": _PKL_2024,
 }
 
 def _download_file(url, dest, chunk=1024*1024*10):
@@ -32,24 +31,35 @@ def _download_file(url, dest, chunk=1024*1024*10):
     print()
     return dest
 
+def _gunzip(src, dest):
+    """解压gz文件到dest"""
+    with gzip.open(src, "rb") as fin:
+        with open(dest, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+
 def _ensure_data():
-    """确保pkl数据文件存在，不存在则从GitHub Release下载"""
+    """确保pkl数据文件存在，不存在则从GitHub Release下载gz并解压"""
     missing = []
-    for name, path in _DATA_FILES.items():
-        if not os.path.exists(path):
-            missing.append(name)
+    for gz_name, pkl_path in _DATA_FILES.items():
+        if not os.path.exists(pkl_path):
+            missing.append(gz_name)
 
     if not missing:
         print("✅ 数据文件已存在，直接加载")
         return
 
     print(f"📡 数据文件缺失，从 GitHub Release 下载: {missing}")
-    for name in missing:
-        dest = _DATA_FILES[name]
-        url = f"{_RELEASE_BASE}/{name}"
-        print(f"📥 正在下载 {name}...")
-        _download_file(url, dest)
-        print(f"✅ {name} 下载完成")
+    for gz_name in missing:
+        pkl_path = _DATA_FILES[gz_name]
+        gz_path = gz_name + ".tmp"
+        url = f"{_RELEASE_BASE}/{gz_name}"
+        print(f"📥 正在下载 {gz_name}...")
+        _download_file(url, gz_path)
+        print(f"📦 正在解压...")
+        _gunzip(gz_path, pkl_path)
+        os.remove(gz_path)
+        size_mb = os.path.getsize(pkl_path) / 1e6
+        print(f"✅ {gz_name} 解压完成 ({size_mb:.1f}MB)")
 
 # ========== 主程序 ==========
 _ensure_data()
