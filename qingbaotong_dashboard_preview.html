@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>情报通数据看板 2024-2025</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+.header { background: linear-gradient(135deg, #1e293b, #334155); padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334155; }
+.header h1 { font-size: 22px; font-weight: 700; background: linear-gradient(90deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.header .subtitle { font-size: 13px; color: #94a3b8; margin-top: 2px; }
+
+.tabs { display: flex; gap: 4px; padding: 16px 32px 0; background: #0f172a; }
+.tab { padding: 8px 20px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px; font-weight: 500; color: #94a3b8; background: #1e293b; border: none; transition: all 0.2s; }
+.tab:hover { color: #e2e8f0; background: #334155; }
+.tab.active { color: #60a5fa; background: #1e293b; border-bottom: 2px solid #60a5fa; }
+
+.main { padding: 24px 32px; }
+.year-badge { display: inline-block; padding: 4px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+.year-badge.y2024 { background: #1e3a5f; color: #60a5fa; border: 1px solid #1e3a5f; }
+.year-badge.y2025 { background: #1a3a2a; color: #34d399; border: 1px solid #34d399; }
+
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.kpi { background: #1e293b; border-radius: 12px; padding: 20px 24px; border: 1px solid #334155; }
+.kpi .label { font-size: 12px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.kpi .value { font-size: 28px; font-weight: 700; color: #f1f5f9; }
+.kpi .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
+.kpi .value.blue { color: #60a5fa; }
+.kpi .value.green { color: #34d399; }
+.kpi .value.purple { color: #a78bfa; }
+.kpi .value.orange { color: #fb923c; }
+
+.charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.chart-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+.chart-card h3 { font-size: 14px; font-weight: 600; color: #cbd5e1; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.chart-card h3::before { content: ''; display: block; width: 3px; height: 14px; background: #60a5fa; border-radius: 2px; }
+.chart-card.full { grid-column: 1 / -1; }
+.chart-card .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.badge-24 { background: #1e3a5f; color: #60a5fa; }
+.badge-25 { background: #1a3a2a; color: #34d399; }
+
+.compare-section { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 24px; }
+.compare-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+.compare-card h3 { font-size: 14px; font-weight: 600; color: #cbd5e1; margin-bottom: 12px; }
+
+.section-title { font-size: 16px; font-weight: 600; color: #e2e8f0; margin: 24px 0 16px; padding-left: 12px; border-left: 3px solid #60a5fa; }
+.hidden { display: none; }
+
+.loading { text-align: center; padding: 60px; color: #64748b; font-size: 16px; }
+
+@media (max-width: 1024px) {
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .charts-grid { grid-template-columns: 1fr; }
+  .compare-section { grid-template-columns: 1fr; }
+  .header { padding: 16px 20px; }
+  .main { padding: 16px 20px; }
+  .tabs { padding: 12px 20px 0; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>🧴 情报通美妆数据看板</h1>
+    <div class="subtitle">京东自营美妆品牌销售数据 · 2024 vs 2025</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <span class="badge badge-24" id="total24-label"></span>
+    <span class="badge badge-25" id="total25-label"></span>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="showYear(2024)">📊 2024年数据</button>
+  <button class="tab" onclick="showYear(2025)">📊 2025年数据</button>
+  <button class="tab" onclick="showCompare()">🔄 2024 vs 2025 对比</button>
+</div>
+
+<div class="main" id="main">
+  <div id="kpi-area" class="kpi-row"></div>
+  <div class="charts-grid" id="charts-area"></div>
+</div>
+
+<div id="compare-view" class="main hidden">
+  <div class="compare-section" id="compare-area"></div>
+</div>
+
+<div id="loading" class="loading">数据加载中...</div>
+
+<script>
+const DATA = {"monthly24": [{"月": 202401, "销售额": 3846410191.24}, {"月": 202402, "销售额": 3663332198.8}, {"月": 202403, "销售额": 4366417174.38}, {"月": 202404, "销售额": 3065301884.46}, {"月": 202405, "销售额": 5360019365.67}, {"月": 202406, "销售额": 5562981245.27}, {"月": 202407, "销售额": 2535794707.9}, {"月": 202408, "销售额": 3462868779.59}, {"月": 202409, "销售额": 3044095181.09}, {"月": 202410, "销售额": 5404275813.77}, {"月": 202411, "销售额": 5092283010.86}, {"月": 202412, "销售额": 3525127161.86}], "monthly25": [{"月": 202501, "销售额": 3919551634.86}, {"月": 202502, "销售额": 3879182538.53}, {"月": 202503, "销售额": 4308585793.72}, {"月": 202504, "销售额": 3162431675.66}, {"月": 202505, "销售额": 5788492019.78}, {"月": 202506, "销售额": 4576587610.33}, {"月": 202507, "销售额": 2702346566.16}, {"月": 202508, "销售额": 4242947535.03}, {"月": 202509, "销售额": 3338867354.42}, {"月": 202510, "销售额": 6706888112.55}, {"月": 202511, "销售额": 4965333218.38}, {"月": 202512, "销售额": 3123421313.63}], "plat24": [{"平台": "国内POP", "销售额": 6025547710.66}, {"平台": "国内自营", "销售额": 38645977744.1}, {"平台": "海外POP", "销售额": 1113770567.42}, {"平台": "海外自营", "销售额": 3143610692.71}], "plat25": [{"平台": "国内POP", "销售额": 5783659690.59}, {"平台": "国内自营", "销售额": 41708463170.65}, {"平台": "海外POP", "销售额": 951172050.28}, {"平台": "海外自营", "销售额": 2271340461.53}], "cat24": {"面部护肤": 30949314323.87, "香水彩妆": 9237737008.78, "洗发护发": 6782862657.49, "男士面部护肤": 1958992724.75}, "cat25": {"面部护肤": 32379138568.98, "香水彩妆": 9340907549.96, "洗发护发": 7239951762.42, "男士面部护肤": 1754637491.69}, "subcat24": {"套装/礼盒": 7976637506.59, "乳液/面霜": 5899856716.14, "面部精华": 5882855864.75, "洗发水": 5321969448.34, "面膜": 2732856447.3, "洁面": 2206090149.23, "口红": 2045425781.96, "香水": 2004288116.46, "爽肤水/化妆水": 1973503299.72, "眼霜/眼部精华": 1614337135.34, "防晒": 1493877329.56, "粉底液/膏": 1075947676.2, "气垫BB/BB霜": 809736588.04, "卸妆": 778045063.63, "男士洁面": 713857950.98}, "subcat25": {"套装/礼盒": 7337455002.78, "面部精华": 6490944245.03, "乳液/面霜": 6409148171.44, "洗发水": 5463160266.94, "面膜": 2823770689.06, "洁面": 2435155957.29, "爽肤水/化妆水": 2198727229.4, "香水": 2150501146.07, "口红": 1714267224.49, "眼霜/眼部精华": 1654584838.09, "防晒": 1570176126.09, "粉底液/膏": 1143584029.04, "气垫BB/BB霜": 895059434.12, "卸妆": 822027596.8, "唇彩唇蜜/唇釉": 714445181.35}, "brand24": {"欧莱雅（LOREAL）": 2611272583.92, "兰蔻（LANCOME）": 2519268208.27, "雅诗兰黛（Estee Lauder）": 2105572678.28, "SK-II": 1815767916.98, "珀莱雅（PROYA）": 1630442141.88, "海蓝之谜（LA MER）": 1353123120.53, "圣罗兰（YSL）": 1110438398.25, "赫莲娜（HELENA RUBINSTEIN）": 1073269142.67, "玉兰油（OLAY）": 1038899907.04, "迪奥（Dior）": 887337242.44, "海飞丝": 771173195.41, "科颜氏（Kiehl's）": 760459068.22, "卡诗（KERASTASE）": 654587616.08, "娇韵诗（CLARINS）": 651546062.7, "薇诺娜（WINONA）": 618987917.61, "修丽可（SkinCeuticals）": 607395225.24, "潘婷（PANTENE）": 585162240.67, "资生堂（SHISEIDO）": 561612498.18, "香奈儿（Chanel）": 544910002.74, "自然堂（CHANDO）": 523512325.59}, "brand25": {"欧莱雅（LOREAL）": 2662284177.45, "兰蔻（LANCOME）": 2522725805.71, "SK-II": 1974817121.64, "雅诗兰黛（Estee Lauder）": 1911021193.4, "海蓝之谜（LA MER）": 1336784285.98, "珀莱雅（PROYA）": 1280037179.95, "圣罗兰（YSL）": 1113642450.3, "赫莲娜（HELENA RUBINSTEIN）": 1106695812.32, "玉兰油（OLAY）": 939420781.0, "卡诗（KERASTASE）": 856845258.0, "迪奥（Dior）": 839788708.16, "修丽可（SkinCeuticals）": 823232183.61, "科颜氏（Kiehl's）": 782505862.14, "娇韵诗（CLARINS）": 665663519.04, "香奈儿（Chanel）": 635590337.82, "资生堂（SHISEIDO）": 613841120.33, "海飞丝": 608567683.47, "薇诺娜（WINONA）": 548020077.23, "潘婷（PANTENE）": 511582539.52, "肌肤之钥（CPB）": 511286979.58}, "sales24": [{"月": 202401, "销量": 33172540}, {"月": 202402, "销量": 32177807}, {"月": 202403, "销量": 34657949}, {"月": 202404, "销量": 29171147}, {"月": 202405, "销量": 38631504}, {"月": 202406, "销量": 43952064}, {"月": 202407, "销量": 28339101}, {"月": 202408, "销量": 32120065}, {"月": 202409, "销量": 32645019}, {"月": 202410, "销量": 47594329}, {"月": 202411, "销量": 46283723}, {"月": 202412, "销量": 34194784}], "sales25": [{"月": 202501, "销量": 36463230}, {"月": 202502, "销量": 33451172}, {"月": 202503, "销量": 39086729}, {"月": 202504, "销量": 34556817}, {"月": 202505, "销量": 44571829}, {"月": 202506, "销量": 43086275}, {"月": 202507, "销量": 32930034}, {"月": 202508, "销量": 39462029}, {"月": 202509, "销量": 37651798}, {"月": 202510, "销量": 55363501}, {"月": 202511, "销量": 46627693}, {"月": 202512, "销量": 30166377}]};
+
+// Format number
+function fmt(n) {
+  if (n >= 1e8) return (n/1e8).toFixed(2) + '亿';
+  if (n >= 1e6) return (n/1e6).toFixed(2) + '百万';
+  if (n >= 1e4) return (n/1e4).toFixed(1) + '万';
+  return n.toFixed(0);
+}
+
+function fmtFull(n) {
+  return Number(n).toLocaleString('zh-CN', {maximumFractionDigits: 0});
+}
+
+// Plotly layout
+const LAYOUT = {
+  paper_bgcolor: 'transparent',
+  plot_bgcolor: 'transparent',
+  font: { family: "-apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", color: '#94a3b8', size: 12 },
+  margin: { t: 10, r: 10, b: 40, l: 60 },
+  xaxis: { gridcolor: '#334155', linecolor: '#334155', tickfont: { color: '#64748b', size: 11 }, showgrid: false },
+  yaxis: { gridcolor: '#1e293b', linecolor: '#334155', tickfont: { color: '#64748b', size: 11 }, zerolinecolor: '#334155' },
+  legend: { bgcolor: 'transparent', font: { color: '#94a3b8', size: 11 }, orientation: 'h', y: 1.12, x: 0.5, xanchor: 'center' },
+  barmode: 'stack',
+  hoverlabel: { bgcolor: '#1e293b', bordercolor: '#334155', font: { color: '#e2e8f0', size: 12 } },
+};
+
+let currentView = 2024;
+let charts = {};
+
+// ========== Chart Builders ==========
+
+function buildMonthlyLine(year) {
+  const key = 'monthly' + year;
+  const d = DATA[key];
+  const months = d.map(r => String(r['月']));
+  const sales = d.map(r => r['销售额']);
+
+  const trace = {
+    x: months, y: sales,
+    type: 'scatter',
+    mode: 'lines+markers',
+    name: '销售额',
+    line: { color: year === 2024 ? '#60a5fa' : '#34d399', width: 3 },
+    marker: { size: 8, color: year === 2024 ? '#60a5fa' : '#34d399' },
+    fill: 'tozeroy',
+    fillcolor: year === 2024 ? 'rgba(96,165,250,0.1)' : 'rgba(52,211,153,0.1)',
+    hovertemplate: '<b>%{x}</b><br>销售额: ¥%{y:,.0f}<extra></extra>',
+  };
+
+  return Plotly.newPlot('chart-monthly', [trace], {
+    ...LAYOUT,
+    title: { text: '月度销售额趋势', font: { color: '#cbd5e1', size: 14 }, x: 0.5, xanchor: 'center' },
+    yaxis: { ...LAYOUT.yaxis, tickformat: ',.0f', title: '销售额 (元)' },
+  }, {responsive: true, displayModeBar: false});
+}
+
+function buildPlatformPie(year) {
+  const key = 'plat' + year;
+  const d = DATA[key];
+  const colors = ['#60a5fa', '#34d399', '#a78bfa', '#fb923c', '#f472b6'];
+
+  const trace = {
+    labels: d.map(r => r['平台']),
+    values: d.map(r => r['销售额']),
+    type: 'pie',
+    hole: 0.5,
+    marker: { colors: colors },
+    textinfo: 'label+percent',
+    textfont: { color: '#e2e8f0', size: 12 },
+    hovertemplate: '<b>%{label}</b><br>销售额: ¥%{value:,.0f}<br>占比: %{percent}<extra></extra>',
+  };
+
+  return Plotly.newPlot('chart-platform', [trace], {
+    ...LAYOUT,
+    title: { text: '平台分布', font: { color: '#cbd5e1', size: 14 }, x: 0.5, xanchor: 'center' },
+    margin: { t: 40, r: 20, b: 20, l: 20 },
+    showlegend: true,
+    legend: { orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center' },
+  }, {responsive: true, displayModeBar: false});
+}
+
+function buildCategory(year) {
+  const key = 'cat' + year;
+  const obj = DATA[key];
+  const cats = Object.keys(obj);
+  const vals = Object.values(obj);
+  const colors = ['#60a5fa', '#34d399', '#a78bfa', '#fb923c', '#f472b6', '#facc15', '#38bdf8', '#4ade80'];
+
+  const trace = {
+    x: vals, y: cats,
+    type: 'bar',
+    orientation: 'h',
+    marker: { color: cats.map((_, i) => colors[i % colors.length]) },
+    hovertemplate: '<b>%{y}</b><br>销售额: ¥%{x:,.0f}<extra></extra>',
+  };
+
+  return Plotly.newPlot('chart-category', [trace], {
+    ...LAYOUT,
+    title: { text: 'Lv1类目 TOP10', font: { color: '#cbd5e1', size: 14 }, x: 0.5, xanchor: 'center' },
+    margin: { t: 10, r: 100, b: 40, l: 120 },
+    yaxis: { gridcolor: 'transparent', linecolor: '#334155', tickfont: { color: '#94a3b8', size: 12 }, showgrid: false },
+  }, {responsive: true, displayModeBar: false});
+}
+
+function buildSubCategory(year) {
+  const key = 'subcat' + year;
+  const obj = DATA[key];
+  const cats = Object.keys(obj).slice(0, 12);
+  const vals = cats.map(k => obj[k]);
+  const colors = ['#60a5fa', '#34d399', '#a78bfa', '#fb923c', '#f472b6', '#facc15', '#38bdf8', '#4ade80', '#e879f9', '#fb7185', '#a3e635', '#22d3ee'];
+
+  const trace = {
+    x: vals, y: cats,
+    type: 'bar',
+    orientation: 'h',
+    marker: { color: cats.map((_, i) => colors[i % colors.length]) },
+    hovertemplate: '<b>%{y}</b><br>销售额: ¥%{x:,.0f}<extra></extra>',
+  };
+
+  return Plotly.newPlot('chart-subcategory', [trace], {
+    ...LAYOUT,
+    title: { text: 'Lv2类目 TOP12', font: { color: '#cbd5e1', size: 14 }, x: 0.5, xanchor: 'center' },
+    margin: { t: 10, r: 100, b: 40, l: 120 },
+    yaxis: { gridcolor: 'transparent', linecolor: '#334155', tickfont: { color: '#94a3b8', size: 11 }, showgrid: false },
+  }, {responsive: true, displayModeBar: false});
+}
+
+function buildBrand(year) {
+  const key = 'brand' + year;
+  const obj = DATA[key];
+  const brands = Object.keys(obj).slice(0, 15);
+  const vals = brands.map(k => obj[k]);
+  const colors = ['#60a5fa','#34d399','#a78bfa','#fb923c','#f472b6','#facc15','#38bdf8','#4ade80','#e879f9','#fb7185','#a3e635','#22d3ee','#818cf8','#f97316','#ec4899'];
+
+  const trace = {
+    x: vals, y: brands,
+    type: 'bar',
+    orientation: 'h',
+    marker: { color: brands.map((_, i) => colors[i % colors.length]) },
+    hovertemplate: '<b>%{y}</b><br>销售额: ¥%{x:,.0f}<extra></extra>',
+  };
+
+  return Plotly.newPlot('chart-brand', [trace], {
+    ...LAYOUT,
+    title: { text: 'TOP品牌 TOP15', font: { color: '#cbd5e1', size: 14 }, x: 0.5, xanchor: 'center' },
+    margin: { t: 10, r: 20, b: 40, l: 160 },
+    yaxis: { gridcolor: 'transparent', linecolor: '#334155', tickfont: { color: '#94a3b8', size: 11 }, showgrid: false },
+  }, {responsive: true, displayModeBar: false});
+}
+
+function buildSalesLine(year) {
+  const key = 'sales' + year;
+  const d = DATA[key];
+  const months = d.map(r => String(r['月']));
+  const sales = d.map(r => r['销量']);
+
+  const trace = {
+    x: months, y: sales,
+    type: 'scatter',
+    mode: 'lines+markers',
+    name: '销量',
+    line: { color: '#a78bfa', width: 3 },
+    marker: { size: 8, color: '#a78bfa' },
+    fill: 'tozeroy',
+    fillcolor: 'rgba(167,139,250,0.1)',
+    hovertemplate: '<b>%{x}</b><br>销量: %{y:,.0f} 件<extra></extra>',
+  };
+
+  return Plotly.newPlot('chart-sales', [trace], {
+    ...LAYOUT,
+    title: { text: '月度销量趋势', font: { color: '#cbd5e1', size: 14 }, x: 0.5, xanchor: 'center' },
+    yaxis: { ...LAYOUT.yaxis, tickformat: ',.0f', title: '销量 (件)' },
+  }, {responsive: true, displayModeBar: false});
+}
+
+function buildCompare() {
+  // Monthly comparison
+  const m24 = DATA.monthly24.map(r => ({m: String(r['月']), v: r['销售额']}));
+  const m25 = DATA.monthly25.map(r => ({m: String(r['月']), v: r['销售额']}));
+
+  const allMonths = [...new Set([...m24.map(r=>r.m), ...m25.map(r=>r.m)])].sort();
+  const v24 = allMonths.map(m => { const r = m24.find(x=>x.m===m); return r ? r.v : 0; });
+  const v25 = allMonths.map(m => { const r = m25.find(x=>x.m===m); return r ? r.v : 0; });
+
+  Plotly.newPlot('cmp-monthly', [
+    { x: allMonths, y: v24, type: 'scatter', mode: 'lines+markers', name: '2024', line: {color:'#60a5fa', width:2}, marker: {size:7}, hovertemplate: '<b>%{x}</b><br>2024: ¥%{y:,.0f}<extra></extra>' },
+    { x: allMonths, y: v25, type: 'scatter', mode: 'lines+markers', name: '2025', line: {color:'#34d399', width:2}, marker: {size:7}, hovertemplate: '<b>%{x}</b><br>2025: ¥%{y:,.0f}<extra></extra>' },
+  ], {
+    ...LAYOUT,
+    title: { text: '月度销售额对比 (万元)', font: {color:'#cbd5e1', size:14}, x:0.5, xanchor:'center'},
+    yaxis: {...LAYOUT.yaxis, tickformat: ',.0f'},
+    legend: { bgcolor:'transparent', orientation:'h', y:1.12, x:0.5, xanchor:'center', font:{color:'#94a3b8',size:12} },
+  }, {responsive:true, displayModeBar:false});
+
+  // Category comparison
+  const cat24 = DATA.cat24;
+  const cat25 = DATA.cat25;
+  const allCats = [...new Set([...Object.keys(cat24), ...Object.keys(cat25)])].sort();
+  const c24 = allCats.map(k => cat24[k] || 0);
+  const c25 = allCats.map(k => cat25[k] || 0);
+
+  Plotly.newPlot('cmp-category', [
+    { x: allCats, y: c24, type: 'bar', name: '2024', marker: {color:'#60a5fa'}, hovertemplate:'<b>%{x}</b><br>2024: ¥%{y:,.0f}<extra></extra>' },
+    { x: allCats, y: c25, type: 'bar', name: '2025', marker: {color:'#34d399'}, hovertemplate:'<b>%{x}</b><br>2025: ¥%{y:,.0f}<extra></extra>' },
+  ], {
+    ...LAYOUT,
+    barmode: 'group',
+    title: { text: 'Lv1类目对比', font: {color:'#cbd5e1', size:14}, x:0.5, xanchor:'center'},
+    xaxis: {...LAYOUT.xaxis, tickfont: {color:'#94a3b8', size:11}},
+    legend: { bgcolor:'transparent', orientation:'h', y:1.12, x:0.5, xanchor:'center', font:{color:'#94a3b8',size:12} },
+  }, {responsive:true, displayModeBar:false});
+
+  // KPI comparison
+  const total24 = Object.values(DATA.cat24).reduce((a,b)=>a+b,0);
+  const total25 = Object.values(DATA.cat25).reduce((a,b)=>a+b,0);
+  const growth = total25 > 0 ? ((total25 - total24) / total24 * 100) : 0;
+
+  document.getElementById('total24-label').textContent = '2024总: ¥' + fmt(total24);
+  document.getElementById('total25-label').textContent = '2025总: ¥' + fmt(total25);
+}
+
+// ========== Render Year View ==========
+
+function renderYearView(year) {
+  const total = Object.values(DATA['cat' + year]).reduce((a,b)=>a+b,0);
+  const sales = (DATA['sales' + year] || []).reduce((a,r)=>a+r['销量'], 0);
+  const avg = total / (DATA['monthly' + year] || []).length;
+  const count = Object.keys(DATA['brand' + year] || {}).length;
+
+  document.getElementById('kpi-area').innerHTML = `
+    <div class="kpi">
+      <div class="label">年度总销售额</div>
+      <div class="value blue">¥${fmt(total)}</div>
+      <div class="sub">${fmtFull(total)} 元</div>
+    </div>
+    <div class="kpi">
+      <div class="label">月均销售额</div>
+      <div class="value green">¥${fmt(avg)}</div>
+      <div class="sub">共 ${(DATA['monthly'+year]||[]).length} 个月</div>
+    </div>
+    <div class="kpi">
+      <div class="label">年度总销量</div>
+      <div class="value purple">${fmt(sales)} 件</div>
+      <div class="sub">${fmtFull(sales)} 件</div>
+    </div>
+    <div class="kpi">
+      <div class="label">品牌数量</div>
+      <div class="value orange">${count}</div>
+      <div class="sub">有销售记录的品牌</div>
+    </div>
+  `;
+
+  document.getElementById('charts-area').innerHTML = `
+    <div class="chart-card full" id="chart-monthly-wrap"><div id="chart-monthly"></div></div>
+    <div class="chart-card" id="chart-platform-wrap"><div id="chart-platform"></div></div>
+    <div class="chart-card" id="chart-category-wrap"><div id="chart-category"></div></div>
+    <div class="chart-card full" id="chart-brand-wrap"><div id="chart-brand"></div></div>
+    <div class="chart-card" id="chart-subcategory-wrap"><div id="chart-subcategory"></div></div>
+    <div class="chart-card" id="chart-sales-wrap"><div id="chart-sales"></div></div>
+  `;
+
+  buildMonthlyLine(year);
+  buildPlatformPie(year);
+  buildCategory(year);
+  buildBrand(year);
+  buildSubCategory(year);
+  buildSalesLine(year);
+}
+
+// ========== Tab Controllers ==========
+
+function showYear(year) {
+  currentView = year;
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    t.classList.toggle('active', i === (year === 2024 ? 0 : 1));
+  });
+  document.getElementById('main').classList.remove('hidden');
+  document.getElementById('compare-view').classList.add('hidden');
+  renderYearView(year);
+}
+
+function showCompare() {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab')[2].classList.add('active');
+  document.getElementById('main').classList.add('hidden');
+  document.getElementById('compare-view').classList.remove('hidden');
+
+  document.getElementById('compare-area').innerHTML = `
+    <div class="compare-card">
+      <h3>月度销售额对比</h3>
+      <div id="cmp-monthly"></div>
+    </div>
+    <div class="compare-card">
+      <h3>Lv1类目对比</h3>
+      <div id="cmp-category"></div>
+    </div>
+  `;
+  buildCompare();
+}
+
+// Init
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('loading').classList.add('hidden');
+  showYear(2024);
+  buildCompare();
+});
+</script>
+</body>
+</html>
