@@ -1,65 +1,116 @@
 #!/usr/bin/env python3
-"""情报通 2024-2025 数据看板 V10 - 从 GitHub Release 自动下载数据"""
-import os, sys, tempfile, shutil, gzip, requests, json as _json
+"""情报通 2024-2025 数据看板 V10 - 支持本地或123云盘加载"""
+import os, sys, requests, json as _json
 
-# ========== GitHub Release 数据加载 ==========
-_DATA_DIR = os.path.join(tempfile.gettempdir(), "qingbaotong_data")
-os.makedirs(_DATA_DIR, exist_ok=True)
-_PKL_2025 = os.path.join(_DATA_DIR, "qingbaotong_2025_full.pkl")
-_PKL_2024 = os.path.join(_DATA_DIR, "qingbaotong_2024_full.pkl")
+# ========== 123云盘配置 ==========
+_123_USER = "18513955120"
+_123_PASS = "Haiyang921"
+_TOKEN_FILE = os.path.expanduser("~/.qclaw/workspace/.123pan_token")
+_PKL_2025 = os.path.expanduser("~/.qclaw/workspace/qingbaotong_2025_full.pkl")
+_PKL_2024 = os.path.expanduser("~/.qclaw/workspace/qingbaotong_2024_full.pkl")
 
-_RELEASE_BASE = "https://github.com/Julian0921/qingbaotong-dashboard/releases/download/v1.0"
-_DATA_FILES = {
-    "qingbaotong_2025_full.pkl.gz": _PKL_2025,
-    "qingbaotong_2024_full.pkl.gz": _PKL_2024,
-}
+def _load_token():
+    if os.path.exists(_TOKEN_FILE):
+        with open(_TOKEN_FILE) as f:
+            return f.read().strip()
+    return None
+
+def _save_token(t):
+    with open(_TOKEN_FILE, "w") as f:
+        f.write(t)
+
+def _get_headers(token=None):
+    h = {
+        "user-agent": "123pan/v2.4.0 (Linux; U; Android 12; Build/SKQ1.211006.001)",
+        "platform": "android",
+        "app-version": "61",
+        "x-app-version": "2.4.0",
+        "host": "www.123pan.com",
+        "accept-encoding": "gzip",
+        "content-type": "application/json",
+    }
+    if token:
+        h["authorization"] = f"Bearer {token}"
+    return h
+
+def _login():
+    token = _load_token()
+    if token:
+        return token
+    url = "https://www.123pan.com/b/api/user/sign_in"
+    data = _json.dumps({"type":1,"passport":_123_USER,"password":_123_PASS})
+    r = requests.post(url, headers=_get_headers(), data=data, timeout=15)
+    d = r.json()
+    if d.get("code") == 200:
+        t = d["data"]["token"]
+        _save_token(t)
+        print("✅ 123云盘登录成功")
+        return t
+    print(f"❌ 登录失败: {d}")
+    return None
+
+def _get_file_list(token):
+    url = ("https://www.123pan.com/api/file/list/new"
+           "?driveId=0&limit=100&next=0&orderBy=file_id"
+           "&orderDirection=desc&parentFileId=0&trashed=false"
+           "&SearchData=&Page=1&OnlyLookAbnormalFile=0")
+    r = requests.get(url, headers=_get_headers(token), timeout=15)
+    d = r.json()
+    if d.get("code") == 0:
+        return d["data"]["InfoList"]
+    return []
 
 def _download_file(url, dest, chunk=1024*1024*10):
     """下载文件到dest，显示进度"""
-    r = requests.get(url, stream=True, timeout=600)
+    r = requests.get(url, stream=True, timeout=300)
     r.raise_for_status()
     total = int(r.headers.get("content-length", 0))
     downloaded = 0
     with open(dest, "wb") as f:
-        for c in r.iter_content(chunk_size=chunk):
-            if c:
-                f.write(c)
-                downloaded += len(c)
+        for chunk in r.iter_content(chunk_size=chunk):
+            if chunk:
+                f.write(chunk)
+                downloaded += len(chunk)
                 if total:
                     pct = downloaded * 100 // total
                     print(f"\r  下载进度: {pct}% ({downloaded//1024//1024}/{total//1024//1024}MB)", end="", flush=True)
     print()
     return dest
 
-def _gunzip(src, dest):
-    """解压gz文件到dest"""
-    with gzip.open(src, "rb") as fin:
-        with open(dest, "wb") as fout:
-            shutil.copyfileobj(fin, fout)
-
 def _ensure_data():
-    """确保pkl数据文件存在，不存在则从GitHub Release下载gz并解压"""
+    """确保pkl数据文件存在，不存在则从123云盘下载"""
     missing = []
-    for gz_name, pkl_path in _DATA_FILES.items():
-        if not os.path.exists(pkl_path):
-            missing.append(gz_name)
+    for path, name in [(_PKL_2025, "qingbaotong_2025_full.pkl"), (_PKL_2024, "qingbaotong_2024_full.pkl")]:
+        if not os.path.exists(path):
+            missing.append(name)
 
     if not missing:
         print("✅ 数据文件已存在，直接加载")
         return
 
-    print(f"📡 数据文件缺失，从 GitHub Release 下载: {missing}")
-    for gz_name in missing:
-        pkl_path = _DATA_FILES[gz_name]
-        gz_path = gz_name + ".tmp"
-        url = f"{_RELEASE_BASE}/{gz_name}"
-        print(f"📥 正在下载 {gz_name}...")
-        _download_file(url, gz_path)
-        print(f"📦 正在解压...")
-        _gunzip(gz_path, pkl_path)
-        os.remove(gz_path)
-        size_mb = os.path.getsize(pkl_path) / 1e6
-        print(f"✅ {gz_name} 解压完成 ({size_mb:.1f}MB)")
+    print(f"📡 数据文件缺失，准备从123云盘下载: {missing}")
+    token = _login()
+    if not token:
+        print("❌ 无法登录123云盘，退出")
+        sys.exit(1)
+
+    files = _get_file_list(token)
+    if not files:
+        print("❌ 无法获取文件列表")
+        sys.exit(1)
+
+    url_map = {}
+    for f in files:
+        url_map[f["FileName"]] = f["DownloadUrl"]
+
+    for name in missing:
+        dest = _PKL_2025 if "2025" in name else _PKL_2024
+        if name not in url_map:
+            print(f"❌ 文件 {name} 不在云盘中")
+            continue
+        print(f"📥 正在下载 {name}...")
+        _download_file(url_map[name], dest)
+        print(f"✅ {name} 下载完成")
 
 # ========== 主程序 ==========
 _ensure_data()
