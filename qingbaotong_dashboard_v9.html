@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>情报通 2025 数据看板 V9</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f8fafc;color:#1e293b;min-height:100vh}
+.header{text-align:center;padding:18px;background:#fff;border-radius:12px;margin-bottom:12px}
+.header h1{font-size:24px;color:#1e293b}
+.header .sub{color:#64748b;font-size:12px;margin-top:6px}
+.kpi-row{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:12px}
+.kpi{background:#fff;padding:14px 10px;border-radius:10px;text-align:center}
+.kpi .label{color:#64748b;font-size:11px;margin-bottom:3px}
+.kpi .val{font-size:22px;font-weight:bold}
+.kpi .unit{font-size:12px;color:#64748b}
+.filter-bar{background:#fff;padding:14px;border-radius:12px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;margin-bottom:12px}
+.filter-bar .f{display:flex;flex-direction:column}
+.filter-bar .f label{font-size:12px;margin-bottom:2px}
+.filter-bar select{padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;min-width:120px;max-height:120px}
+.filter-bar .f.brand select{min-width:170px}
+.filter-bar .btns{display:flex;align-items:flex-end;gap:6px}
+.filter-bar button{padding:10px 16px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px}
+.btn-apply{background:#3b82f6;color:white}
+.btn-reset{background:#e2e8f0;color:#334155}
+.status-bar{background:#f0f9ff;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:12px;color:#3b82f6}
+.mode-bar{background:#fff;padding:10px;border-radius:8px;margin-bottom:12px;font-size:13px}
+.mode-bar label{margin-right:12px}
+.chart-row{display:flex;gap:10px;margin-bottom:10px}
+.chart-row .chart{flex:1;background:#fff;padding:12px;border-radius:12px}
+.table-section{background:#fff;padding:15px;border-radius:12px;margin-bottom:12px}
+.table-section h3{font-size:13px;font-weight:bold;margin-bottom:10px;color:#ef4444}
+.table-section table{width:100%;border-collapse:collapse;font-size:11px}
+.table-section th{background:#f1f5f9;padding:6px 8px;text-align:center;font-weight:bold;position:sticky;top:0}
+.table-section td{padding:5px 8px;text-align:center;border-bottom:1px solid #f1f5f9}
+.table-section tr:nth-child(even){background:#f8fafc}
+.table-wrap{max-height:380px;overflow-y:auto}
+.drill{background:#f0fdf4;padding:15px;border-radius:12px;margin-bottom:12px;display:none}
+.drill .drill-header{display:flex;margin-bottom:12px}
+.drill .drill-title{font-size:16px;font-weight:bold;flex:1}
+.drill .btn-close{background:#fee2e2;color:#ef4444;border:none;padding:8px 16px;border-radius:8px;cursor:pointer}
+.drill .drill-charts{display:flex;gap:8px;margin-bottom:8px}
+.drill .drill-charts .chart{flex:1;background:#fff;padding:12px;border-radius:12px}
+.drill .drill-tables{display:flex;gap:8px}
+.drill .drill-tables .tbl{flex:1;background:#fff;padding:12px;border-radius:12px}
+.drill .drill-tables .tbl h4{font-weight:bold;margin-bottom:8px;font-size:13px}
+.loading-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999}
+.loading-overlay .spinner{width:40px;height:40px;border:4px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-overlay .msg{margin-top:16px;color:#64748b;font-size:14px}
+.loading-overlay .progress{margin-top:8px;color:#3b82f6;font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="msg" id="load-msg">正在从 GitHub 加载数据...</div>
+  <div class="progress" id="load-progress"></div>
+</div>
+
+<div class="header">
+  <h1>📊 情报通 2025 全年数据看板 V9</h1>
+  <div class="sub" id="header-sub">加载中...</div>
+</div>
+
+<div class="kpi-row" id="kpi-row"></div>
+
+<div class="filter-bar" id="filter-bar">
+  <div class="f"><label>📅 月份</label><select id="f-month" multiple></select></div>
+  <div class="f"><label style="color:#8b5cf6">🏷️ 一级类目</label><select id="f-cat1" multiple></select></div>
+  <div class="f"><label style="color:#10b981">🏷️ 二级类目</label><select id="f-cat2" multiple></select></div>
+  <div class="f brand"><label>🏢 品牌</label><select id="f-brand" multiple></select></div>
+  <div class="f"><label>🏪 平台</label><select id="f-platform" multiple></select></div>
+  <div class="f"><label style="color:#f59e0b">💰 价格</label><select id="f-price" multiple></select></div>
+  <div class="btns">
+    <button class="btn-apply" onclick="applyFilter()">✅ 应用</button>
+    <button class="btn-reset" onclick="resetFilter()">🔄 重置</button>
+  </div>
+</div>
+
+<div class="status-bar" id="status-bar">📌 全部数据 | 点击图表下钻</div>
+
+<div class="mode-bar">
+  <label>📊 展示：</label>
+  <label><input type="checkbox" id="mode-abs" checked> 绝对值</label>
+  <label><input type="checkbox" id="mode-pct"> 百分比</label>
+</div>
+
+<div class="chart-row">
+  <div class="chart"><div id="g-trend"></div></div>
+  <div class="chart"><div id="g-cat1"></div></div>
+</div>
+<div class="chart-row">
+  <div class="chart"><div id="g-cat2"></div></div>
+  <div class="chart"><div id="g-price"></div></div>
+</div>
+<div class="chart-row">
+  <div class="chart"><div id="g-platform"></div></div>
+  <div class="chart"><div id="g-brand"></div></div>
+</div>
+
+<div class="table-section">
+  <h3>🏪 店铺排名 Top100</h3>
+  <div class="table-wrap" id="store-table"></div>
+</div>
+
+<div class="drill" id="drill-section">
+  <div class="drill-header">
+    <div class="drill-title" id="drill-title"></div>
+    <button class="btn-close" onclick="closeDrill()">❌ 关闭</button>
+  </div>
+  <div class="drill-charts">
+    <div class="chart"><div id="d-monthly"></div></div>
+    <div class="chart"><div id="d-price"></div></div>
+  </div>
+  <div class="drill-tables">
+    <div class="tbl"><h4 style="color:#ef4444">🏪 店铺 Top100</h4><div class="table-wrap" id="d-store-table"></div></div>
+    <div class="tbl"><h4 style="color:#f59e0b">🏆 品牌 Top100</h4><div class="table-wrap" id="d-brand-table"></div></div>
+  </div>
+</div>
+
+<script>
+const RELEASE_BASE = "https://github.com/Julian0921/qingbaotong-dashboard/releases/download/v1.0";
+const DATA_URL = RELEASE_BASE + "/qingbaotong_2025_agg.csv.gz";
+const META_URL = RELEASE_BASE + "/qingbaotong_2025_meta.json";
+
+let DATA = []; // aggregated rows
+let META = {}; // metadata
+let filteredData = [];
+const PBINS = ["0-50","50-100","100-200","200-500","500-1000","1000+"];
+const PCOLORS = ["#10b981","#f59e0b","#3b82f6","#8b5cf6","#ec4899","#ef4444"];
+
+// ========== Load Data ==========
+async function loadData() {
+  // Load meta
+  document.getElementById('load-msg').textContent = '加载元数据...';
+  const metaResp = await fetch(META_URL);
+  META = await metaResp.json();
+
+  // Load CSV.gz
+  document.getElementById('load-msg').textContent = '下载数据 (约11MB)...';
+  const resp = await fetch(DATA_URL);
+  const reader = resp.body.getReader();
+  const contentLength = +resp.headers.get('Content-Length') || 0;
+  let received = 0;
+  let chunks = [];
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    if (contentLength) {
+      const pct = Math.round(received / contentLength * 100);
+      document.getElementById('load-progress').textContent = `${pct}% (${(received/1e6).toFixed(1)}MB / ${(contentLength/1e6).toFixed(1)}MB)`;
+    }
+  }
+
+  document.getElementById('load-msg').textContent = '解压数据...';
+  const blob = new Blob(chunks);
+  const buf = await blob.arrayBuffer();
+  const decompressed = pako.inflate(new Uint8Array(buf), {to: 'string'});
+
+  document.getElementById('load-msg').textContent = '解析数据...';
+  const parsed = Papa.parse(decompressed, {header: true, dynamicTyping: true, skipEmptyLines: true});
+  DATA = parsed.data;
+
+  document.getElementById('load-msg').textContent = '渲染看板...';
+  initDashboard();
+  document.getElementById('loading').style.display = 'none';
+}
+
+// ========== Filter ==========
+function filterData() {
+  const months = getSel('f-month');
+  const cat1 = getSel('f-cat1');
+  const cat2 = getSel('f-cat2');
+  const brands = getSel('f-brand');
+  const platforms = getSel('f-platform');
+  const prices = getSel('f-price');
+
+  filteredData = DATA.filter(r => {
+    if (months.length && !months.includes(r["月份"])) return false;
+    if (cat1.length && !cat1.includes(r["Lv1类目"])) return false;
+    if (cat2.length && !cat2.includes(r["Lv2类目"])) return false;
+    if (brands.length && !brands.includes(r["品牌"])) return false;
+    if (platforms.length && !platforms.includes(r["平台"])) return false;
+    if (prices.length && !prices.includes(r["价格区间"])) return false;
+    return true;
+  });
+  return filteredData;
+}
+
+function getSel(id) {
+  return Array.from(document.getElementById(id).selectedOptions).map(o => o.value);
+}
+
+// ========== Aggregate Helpers ==========
+function groupBy(data, key, valKey="销售额") {
+  const map = {};
+  data.forEach(r => {
+    const k = r[key] || "未知";
+    map[k] = (map[k] || 0) + (r[valKey] || 0);
+  });
+  return map;
+}
+
+function groupByMulti(data, keys, valKey="销售额") {
+  const map = {};
+  data.forEach(r => {
+    const k = keys.map(k => r[k] || "未知").join("|");
+    map[k] = (map[k] || 0) + (r[valKey] || 0);
+  });
+  return map;
+}
+
+function topN(obj, n=10) {
+  return Object.entries(obj).sort((a,b) => b[1]-a[1]).slice(0, n);
+}
+
+function fmt(n) {
+  if (n >= 1e8) return (n/1e8).toFixed(2) + '亿';
+  if (n >= 1e4) return (n/1e4).toFixed(1) + '万';
+  return n.toFixed(0);
+}
+
+function fmtFull(n) { return Number(n).toLocaleString('zh-CN', {maximumFractionDigits:0}); }
+
+// ========== Render ==========
+function initDashboard() {
+  // Populate dropdowns
+  fillSelect('f-month', META.months);
+  fillSelect('f-cat1', META.cat1);
+  fillSelect('f-cat2', META.cat2);
+  fillSelect('f-brand', META.brands);
+  fillSelect('f-platform', META.platforms);
+  fillSelect('f-price', PBINS);
+
+  // Cat1 -> Cat2 linkage
+  document.getElementById('f-cat1').addEventListener('change', () => {
+    const sel = getSel('f-cat1');
+    const c2el = document.getElementById('f-cat2');
+    if (!sel.length) {
+      fillSelect('f-cat2', META.cat2);
+    } else {
+      const c2set = new Set();
+      sel.forEach(c1 => (META.cat1_to_cat2[c1] || []).forEach(c2 => c2set.add(c2)));
+      fillSelect('f-cat2', [...c2set].sort());
+    }
+  });
+
+  applyFilter();
+}
+
+function fillSelect(id, opts) {
+  const el = document.getElementById(id);
+  const prev = getSel(id);
+  el.innerHTML = opts.map(o => `<option value="${o}">${o}</option>`).join('');
+  if (prev.length) {
+    Array.from(el.options).forEach(o => { if (prev.includes(o.value)) o.selected = true; });
+  }
+}
+
+function applyFilter() {
+  const d = filterData();
+  const showPct = document.getElementById('mode-pct').checked;
+
+  // KPIs
+  const totalSales = d.reduce((s,r) => s + (r["销售额"]||0), 0);
+  const totalQty = d.reduce((s,r) => s + (r["销量"]||0), 0);
+  const avgPrice = d.length ? d.reduce((s,r) => s + (r["成交均价"]||0), 0) / d.length : 0;
+  const prodCnt = new Set(d.map(r => r["商品数"])).size;
+  const brandCnt = new Set(d.map(r => r["品牌"])).size;
+  const storeCnt = META.store_top.length;
+
+  document.getElementById('kpi-row').innerHTML = `
+    <div class="kpi"><div class="label">销售额</div><div class="val" style="color:#3b82f6">${(totalSales/1e8).toFixed(2)}</div><div class="unit">亿元</div></div>
+    <div class="kpi"><div class="label">销量</div><div class="val" style="color:#f59e0b">${(totalQty/1e4).toFixed(1)}</div><div class="unit">万件</div></div>
+    <div class="kpi"><div class="label">均价</div><div class="val" style="color:#10b981">${avgPrice.toFixed(1)}</div><div class="unit">元</div></div>
+    <div class="kpi"><div class="label">商品</div><div class="val" style="color:#8b5cf6">${prodCnt}</div><div class="unit">个</div></div>
+    <div class="kpi"><div class="label">品牌</div><div class="val" style="color:#ec4899">${brandCnt}</div><div class="unit">个</div></div>
+    <div class="kpi"><div class="label">店铺</div><div class="val" style="color:#ef4444">${storeCnt}</div><div class="unit">家</div></div>
+  `;
+
+  const statusParts = [];
+  const months = getSel('f-month'), cat1 = getSel('f-cat1'), cat2 = getSel('f-cat2');
+  const brands = getSel('f-brand'), platforms = getSel('f-platform'), prices = getSel('f-price');
+  if (months.length) statusParts.push(`月份${months.length}个`);
+  if (cat1.length) statusParts.push(`类目${cat1.length}个`);
+  if (cat2.length) statusParts.push(`子类${cat2.length}个`);
+  if (brands.length) statusParts.push(`品牌${brands.length}个`);
+  document.getElementById('status-bar').textContent = `📌 ${statusParts.length ? statusParts.join(', ') : '全部'} | ${d.length.toLocaleString()} 条 | 点击图表下钻`;
+
+  document.getElementById('header-sub').textContent = `📦 ${d.length.toLocaleString()} 条 | 🏢 ${brandCnt} 品牌`;
+
+  // Charts
+  renderMonthly(d, showPct);
+  renderCat1(d, showPct);
+  renderCat2(d, showPct);
+  renderPrice(d, showPct);
+  renderPlatform(d, showPct);
+  renderBrand(d, showPct);
+  renderStoreTable();
+}
+
+function resetFilter() {
+  ['f-month','f-cat1','f-cat2','f-brand','f-platform','f-price'].forEach(id => {
+    Array.from(document.getElementById(id).options).forEach(o => o.selected = false);
+  });
+  applyFilter();
+}
+
+// ========== Chart Renderers ==========
+const CL = {paper_bgcolor:'transparent',plot_bgcolor:'transparent',font:{size:12,color:'#64748b'},margin:{t:40,r:40,b:80,l:50},clickmode:'event+select'};
+const BAR = {type:'bar',textposition:'outside'};
+
+function renderMonthly(d, pct) {
+  const g = groupBy(d, "月份");
+  const items = Object.entries(g).sort((a,b) => a[0].localeCompare(b[0]));
+  const xs = items.map(i => i[0]), ys = items.map(i => i[1]);
+  if (pct) {
+    const tot = ys.reduce((a,b)=>a+b,0);
+    const ps = ys.map(v => v/tot*100);
+    Plotly.newPlot('g-trend', [{...BAR, x:xs, y:ps, marker:{color:'#3b82f6'}, text:ps.map(v=>v.toFixed(1)+'%')}], {...CL, title:'📈 月度占比（%）（点击下钻）', yaxis:{range:[0,100]}});
+  } else {
+    const yse = ys.map(v => v/1e8);
+    Plotly.newPlot('g-trend', [{...BAR, x:xs, y:yse, marker:{color:'#3b82f6'}, text:yse.map(v=>v.toFixed(1)+'亿')}], {...CL, title:'📈 月度销售额（亿元）（点击下钻）', yaxis:{title:'亿元'}});
+  }
+  document.getElementById('g-trend').on('plotly_click', e => drill('月份', e.points[0].x));
+}
+
+function renderCat1(d, pct) {
+  const g = groupBy(d, "Lv1类目");
+  const top = topN(g, 8);
+  const xs = top.map(t=>t[0]), ys = top.map(t=>t[1]);
+  if (pct) {
+    const tot = ys.reduce((a,b)=>a+b,0);
+    const ps = ys.map(v=>v/tot*100);
+    Plotly.newPlot('g-cat1', [{...BAR, x:xs, y:ps, marker:{color:'#8b5cf6'}, text:ps.map(v=>v.toFixed(1)+'%')}], {...CL, title:'🏷️ 一级类目占比（%）（点击下钻）', xaxis:{tickangle:-30}, yaxis:{range:[0,100]}});
+  } else {
+    const yse = ys.map(v => v/1e8);
+    Plotly.newPlot('g-cat1', [{...BAR, x:xs, y:yse, marker:{color:'#8b5cf6'}, text:yse.map(v=>v.toFixed(2)+'亿')}], {...CL, title:'🏷️ 一级类目分布（点击下钻）', xaxis:{tickangle:-30}, yaxis:{title:'亿元'}});
+  }
+  document.getElementById('g-cat1').on('plotly_click', e => drill('Lv1类目', e.points[0].x));
+}
+
+function renderCat2(d, pct) {
+  const g = groupBy(d, "Lv2类目");
+  const top = topN(g, 12);
+  const xs = top.map(t=>t[0]), ys = top.map(t=>t[1]);
+  if (pct) {
+    const tot = ys.reduce((a,b)=>a+b,0);
+    const ps = ys.map(v=>v/tot*100);
+    Plotly.newPlot('g-cat2', [{...BAR, x:xs, y:ps, marker:{color:'#10b981'}, text:ps.map(v=>v.toFixed(1)+'%')}], {...CL, title:'🏷️ 二级类目占比（%）（点击下钻）', xaxis:{tickangle:-45}, yaxis:{range:[0,100]}});
+  } else {
+    const yse = ys.map(v => v/1e8);
+    Plotly.newPlot('g-cat2', [{...BAR, x:xs, y:yse, marker:{color:'#10b981'}, text:yse.map(v=>v.toFixed(2)+'亿')}], {...CL, title:'🏷️ 二级类目分布（点击下钻）', xaxis:{tickangle:-45}, yaxis:{title:'亿元'}});
+  }
+  document.getElementById('g-cat2').on('plotly_click', e => drill('Lv2类目', e.points[0].x));
+}
+
+function renderPrice(d, pct) {
+  const g = groupBy(d, "价格区间");
+  const xs = PBINS, ys = PBINS.map(p => g[p] || 0);
+  if (pct) {
+    const tot = ys.reduce((a,b)=>a+b,0);
+    const ps = ys.map(v=>v/tot*100);
+    Plotly.newPlot('g-price', [{...BAR, x:xs, y:ps, marker:{color:PCOLORS}, text:ps.map(v=>v.toFixed(1)+'%')}], {...CL, title:'💰 价格区间占比（%）（点击下钻）', yaxis:{range:[0,100]}});
+  } else {
+    const yse = ys.map(v => v/1e8);
+    Plotly.newPlot('g-price', [{...BAR, x:xs, y:yse, marker:{color:PCOLORS}, text:yse.map(v=>v.toFixed(1)+'亿')}], {...CL, title:'💰 价格区间（点击下钻）', yaxis:{title:'亿元'}});
+  }
+  document.getElementById('g-price').on('plotly_click', e => drill('价格区间', PBINS[e.points[0].pointIndex]));
+}
+
+function renderPlatform(d, pct) {
+  const g = groupBy(d, "平台");
+  const top = topN(g, 10);
+  const xs = top.map(t=>t[0]), ys = top.map(t=>t[1]);
+  if (pct) {
+    const tot = ys.reduce((a,b)=>a+b,0);
+    const ps = ys.map(v=>v/tot*100);
+    Plotly.newPlot('g-platform', [{...BAR, x:xs, y:ps, marker:{color:'#06b6d4'}, text:ps.map(v=>v.toFixed(1)+'%')}], {...CL, title:'📦 平台占比（%）（点击下钻）', yaxis:{range:[0,100]}});
+  } else {
+    const yse = ys.map(v => v/1e8);
+    Plotly.newPlot('g-platform', [{...BAR, x:xs, y:yse, marker:{color:'#06b6d4'}, text:yse.map(v=>v.toFixed(2)+'亿')}], {...CL, title:'📦 平台分布（点击下钻）', yaxis:{title:'亿元'}});
+  }
+  document.getElementById('g-platform').on('plotly_click', e => drill('平台', e.points[0].x));
+}
+
+function renderBrand(d, pct) {
+  const g = groupBy(d, "品牌");
+  const top = topN(g, 10).reverse();
+  const ys = top.map(t=>t[0]), xs = top.map(t=>t[1]);
+  if (pct) {
+    const tot = xs.reduce((a,b)=>a+b,0);
+    const ps = xs.map(v=>v/tot*100);
+    Plotly.newPlot('g-brand', [{...BAR, y:ys, x:ps, orientation:'h', marker:{color:'#ec4899'}, text:ps.map(v=>v.toFixed(1)+'%')}], {...CL, title:'🏆 品牌 Top10（%）（点击下钻）', xaxis:{range:[0,100]}, margin:{l:120,r:70}});
+  } else {
+    const xse = xs.map(v => v/1e8);
+    Plotly.newPlot('g-brand', [{...BAR, y:ys, x:xse, orientation:'h', marker:{color:'#ec4899'}, text:xse.map(v=>v.toFixed(2)+'亿')}], {...CL, title:'🏆 品牌 Top10（亿元）（点击下钻）', xaxis:{title:'亿元'}, margin:{l:120,r:80}});
+  }
+  document.getElementById('g-brand').on('plotly_click', e => drill('品牌', e.points[0].y));
+}
+
+function renderStoreTable() {
+  const rows = META.store_top;
+  let html = '<table><tr><th>排名</th><th>店铺名称</th><th>销售额(亿)</th><th>销量(万)</th><th>商品数</th></tr>';
+  rows.forEach(r => {
+    html += `<tr><td>${r["排名"]}</td><td style="text-align:left">${r["店铺"]}</td><td>${r["销售额亿"]}</td><td>${r["销量万"]}</td><td>${r["商品数"]}</td></tr>`;
+  });
+  html += '</table>';
+  document.getElementById('store-table').innerHTML = html;
+}
+
+// ========== Drill Down ==========
+function drill(key, value) {
+  const dd = filteredData.filter(r => r[key] === value);
+  const emoji = {"月份":"📅","Lv1类目":"🏷️","Lv2类目":"🏷️","价格区间":"💰","平台":"📦","品牌":"🏢"}[key] || "🔍";
+
+  document.getElementById('drill-title').textContent = `${emoji} ${key}「${value}」详细分析`;
+  document.getElementById('drill-section').style.display = 'block';
+
+  // Monthly
+  const mg = groupBy(dd, "月份");
+  const mitems = Object.entries(mg).sort((a,b)=>a[0].localeCompare(b[0]));
+  Plotly.newPlot('d-monthly', [{...BAR, x:mitems.map(i=>i[0]), y:mitems.map(i=>i[1]/1e8), marker:{color:'#3b82f6'}, text:mitems.map(i=>(i[1]/1e8).toFixed(1)+'亿')}], {...CL, title:'📈 月度趋势', yaxis:{title:'亿元'}, margin:{t:40,r:30,b:40,l:50}});
+
+  // Price
+  const pg = groupBy(dd, "价格区间");
+  const pys = PBINS.map(p => (pg[p]||0)/1e8);
+  Plotly.newPlot('d-price', [{...BAR, x:PBINS, y:pys, marker:{color:PCOLORS}, text:pys.map(v=>v.toFixed(1)+'亿')}], {...CL, title:'💰 价格区间', yaxis:{title:'亿元'}, margin:{t:40,r:30,b:40,l:50}});
+
+  // Brand top 100 table
+  const bg = {};
+  dd.forEach(r => { bg[r["品牌"]] = (bg[r["品牌"]]||0) + (r["销售额"]||0); });
+  const btop = topN(bg, 100);
+  let bhtml = '<table><tr><th>排名</th><th>品牌</th><th>销售额(亿)</th></tr>';
+  btop.forEach((t,i) => { bhtml += `<tr><td>${i+1}</td><td style="text-align:left">${t[0]}</td><td>${(t[1]/1e8).toFixed(3)}</td></tr>`; });
+  bhtml += '</table>';
+  document.getElementById('d-brand-table').innerHTML = bhtml;
+
+  // Store top - use meta store_top since we don't have store in agg data
+  document.getElementById('d-store-table').innerHTML = '<div style="color:#94a3b8;font-size:12px">店铺明细请使用完整 Dash 版本查看</div>';
+
+  document.getElementById('drill-section').scrollIntoView({behavior:'smooth'});
+}
+
+function closeDrill() {
+  document.getElementById('drill-section').style.display = 'none';
+}
+
+// Mode toggle
+document.getElementById('mode-abs').addEventListener('change', applyFilter);
+document.getElementById('mode-pct').addEventListener('change', applyFilter);
+
+// Init
+loadData();
+</script>
+</body>
+</html>
